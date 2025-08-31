@@ -1,0 +1,13 @@
+{
+  "updated_at": "2025-08-31T12:00:00Z",
+  "fixtures": [
+    {
+      "id": 1,
+      "league": {"id": 100, "name": "Süper Lig", "country": "Türkiye", "season": 2025, "round": "Hafta 3"},
+      "status": {"short": "NS", "long": "Not Started", "elapsed": 0},
+      "datetime_utc": "2025-08-31T17:00:00Z",
+      "home": {"id": 1907, "name": "Fenerbahçe", "goals": 0},
+      "away": {"id": 1903, "name": "Beşiktaş", "goals": 0}
+    }
+  ]
+}
