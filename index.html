@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="tr" class="h-full bg-slate-950">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Canlı Maç Skoru</title>
+  <meta name="description" content="GitHub Pages ile canlı maç skorları" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol" }
+    .glow { box-shadow: 0 0 40px rgba(59,130,246,.25), 0 0 80px rgba(99,102,241,.15); }
+    .pulse { animation: pulse 1.25s infinite; }
+    @keyframes pulse { 0% { opacity: .5 } 50% { opacity: 1 } 100% { opacity: .5 } }
+  </style>
+</head>
+<body class="min-h-full text-slate-100">
+  <header class="sticky top-0 z-10 backdrop-blur border-b border-white/10 bg-slate-900/60">
+    <div class="mx-auto max-w-6xl px-4 py-4 flex items-center gap-3">
+      <div class="h-9 w-9 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-500 glow"></div>
+      <div class="flex-1">
+        <h1 class="text-xl md:text-2xl font-extrabold tracking-tight">Canlı Maç Skoru</h1>
+        <p class="text-xs md:text-sm text-slate-400">GitHub Pages + Actions ile otomatik güncellenir</p>
+      </div>
+      <button id="refreshBtn" class="px-3 py-2 text-sm font-semibold rounded-xl bg-sky-600 hover:bg-sky-500 active:bg-sky-700 transition">Şimdi Yenile</button>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-4 py-6">
+    <section class="mb-4 grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div class="md:col-span-2">
+        <label class="block text-xs text-slate-400 mb-1">Takım Ara</label>
+        <input id="searchInput" type="text" placeholder="Fenerbahçe, Galatasaray, Real Madrid…" class="w-full px-3 py-2 rounded-xl bg-slate-800/80 border border-white/10 focus:outline-none focus:ring-2 focus:ring-sky-600" />
+      </div>
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Lig Filtresi</label>
+        <select id="leagueSelect" class="w-full px-3 py-2 rounded-xl bg-slate-800/80 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-600">
+          <option value="">Tümü</option>
+        </select>
+      </div>
+      <div class="flex items-end gap-3">
+        <label class="inline-flex items-center gap-2 bg-slate-800/80 border border-white/10 px-3 py-2 rounded-xl select-none">
+          <input id="liveOnly" type="checkbox" class="accent-rose-500">
+          <span class="text-sm">Sadece Canlı</span>
+        </label>
+        <label class="inline-flex items-center gap-2 bg-slate-800/80 border border-white/10 px-3 py-2 rounded-xl select-none">
+          <input id="autoRefresh" type="checkbox" class="accent-emerald-500" checked>
+          <span class="text-sm">Oto-Yenile (60sn)</span>
+        </label>
+      </div>
+    </section>
+
+    <div id="meta" class="text-xs text-slate-400 mb-3">Son güncelleme: –</div>
+
+    <div id="list" class="grid grid-cols-1 gap-3"></div>
+
+    <template id="leagueTpl">
+      <section class="rounded-2xl border border-white/10 bg-slate-900/60 overflow-hidden">
+        <header class="px-4 py-3 flex items-center gap-2 bg-slate-900/70 border-b border-white/5">
+          <span class="h-2.5 w-2.5 rounded-full bg-indigo-400"></span>
+          <h2 class="text-sm font-semibold tracking-wide"></h2>
+          <span class="ml-auto text-xs text-slate-400"></span>
+        </header>
+        <div class="divide-y divide-white/5"></div>
+      </section>
+    </template>
+
+    <template id="matchTpl">
+      <article class="px-4 py-3 flex flex-col gap-2 md:flex-row md:items-center md:gap-4">
+        <div class="flex items-center gap-2 min-w-24">
+          <span class="statusBadge text-[10px] font-bold px-2 py-1 rounded-full"></span>
+          <time class="text-xs text-slate-400"></time>
+        </div>
+        <div class="flex-1 grid grid-cols-3 items-center gap-2">
+          <div class="text-right truncate font-medium home"></div>
+          <div class="text-center font-extrabold text-lg score"></div>
+          <div class="text-left truncate font-medium away"></div>
+        </div>
+        <div class="text-xs text-slate-400 md:min-w-40 md:text-right round"></div>
+      </article>
+    </template>
+
+    <div id="empty" class="hidden text-center text-slate-400 text-sm py-16">Gösterilecek maç bulunamadı.</div>
+  </main>
+
+  <footer class="mx-auto max-w-6xl px-4 py-8 text-center text-xs text-slate-500">
+    <p>Veriler `scores.json` dosyasından yüklenir. © <span id="year"></span></p>
+  </footer>
+
+  <script type="module">
+    const $ = (s, el=document) => el.querySelector(s);
+    const listEl = $('#list');
+    const metaEl = $('#meta');
+    const leagueTpl = $('#leagueTpl');
+    const matchTpl = $('#matchTpl');
+    const searchInput = $('#searchInput');
+    const leagueSelect = $('#leagueSelect');
+    const liveOnly = $('#liveOnly');
+    const autoRefresh = $('#autoRefresh');
+    const refreshBtn = $('#refreshBtn');
+    $('#year').textContent = new Date().getFullYear();
+
+    let DATA = { updated_at: null, fixtures: [] };
+    let refreshTimer = null;
+
+    const tz = 'Europe/Istanbul';
+
+    async function fetchScores() {
+      // Önce yerel scores.json (aynı repo)
+      const urls = [
+        './scores.json',
+        // İstersen yedek: jsDelivr üzerinden — depo/branch adını değiştir
+        // 'https://cdn.jsdelivr.net/gh/KULLANICI_ADI/DEPO_ADI@main/scores.json'
+      ];
+      for (const url of urls) {
+        try {
+          const res = await fetch(url, { cache: 'no-store' });
+          if (!res.ok) continue;
+          const json = await res.json();
+          if (!json || !Array.isArray(json.fixtures)) continue;
+          return json;
+        } catch (e) {}
+      }
+      // Hiçbiri gelmezse örnek veri kullan
+      return SAMPLE;
+    }
+
+    function statusBadge(status) {
+      const s = status?.short || '';
+      const elapsed = status?.elapsed ?? 0;
+      if (['1H','2H','ET'].includes(s) || (s === 'LIVE') ) {
+        return { text: `CANLI ${elapsed > 0 ? elapsed+"'" : ''}`, class: 'bg-rose-600/90 text-white pulse' };
+      }
+      if (['HT'].includes(s)) return { text: 'DEVRE', class:'bg-amber-500/90 text-black' };
+      if (['FT','AET','PEN'].includes(s)) return { text: 'BİTTİ', class:'bg-slate-700/90 text-white' };
+      if (['NS'].includes(s)) return { text: 'BAŞLAMADI', class:'bg-sky-700/80 text-white' };
+      return { text: status?.long || s || '—', class: 'bg-slate-700/70 text-white' };
+    }
+
+    function fmtTime(iso) {
+      try {
+        const d = new Date(iso);
+        return new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short', hour12:false, timeZone: tz }).format(d);
+      } catch { return '—'; }
+    }
+
+    function render() {
+      const q = searchInput.value.trim().toLowerCase();
+      const leagueFilter = leagueSelect.value;
+      const liveOnlyOn = liveOnly.checked;
+
+      // Lig listesi doldur
+      const leagues = Array.from(new Set(DATA.fixtures.map(f => `${f.league.name} — ${f.league.country}`))).sort();
+      leagueSelect.innerHTML = '<option value="">Tümü</option>' + leagues.map(l => `<option>${l}</option>`).join('');
+
+      // Filtreler
+      let fixtures = DATA.fixtures.slice();
+      if (q) fixtures = fixtures.filter(f => `${f.home.name} ${f.away.name}`.toLowerCase().includes(q));
+      if (leagueFilter) fixtures = fixtures.filter(f => `${f.league.name} — ${f.league.country}` === leagueFilter);
+      if (liveOnlyOn) fixtures = fixtures.filter(f => ['1H','2H','ET','LIVE','HT'].includes(f.status.short));
+
+      // Sıralama: önce canlılar, sonra en yakın saat
+      fixtures.sort((a,b)=>{
+        const liveA = ['1H','2H','ET','LIVE','HT'].includes(a.status.short) ? 0 : 1;
+        const liveB = ['1H','2H','ET','LIVE','HT'].includes(b.status.short) ? 0 : 1;
+        if (liveA !== liveB) return liveA - liveB;
+        return new Date(a.datetime_utc) - new Date(b.datetime_utc);
+      });
+
+      // Grupla: Lig -> Maçlar
+      const byLeague = new Map();
+      for (const f of fixtures) {
+        const key = `${f.league.name} — ${f.league.country}`;
+        if (!byLeague.has(key)) byLeague.set(key, []);
+        byLeague.get(key).push(f);
+      }
+
+      listEl.innerHTML = '';
+      if (fixtures.length === 0) {
+        $('#empty').classList.remove('hidden');
+      } else {
+        $('#empty').classList.add('hidden');
+        for (const [leagueName, arr] of byLeague.entries()) {
+          const sec = leagueTpl.content.cloneNode(true);
+          const root = sec.querySelector('section');
+          root.querySelector('h2').textContent = leagueName;
+          root.querySelector('span.ml-auto').textContent = `${arr.length} maç`;
+          const holder = root.querySelector('div.divide-y');
+          for (const f of arr) {
+            const row = matchTpl.content.cloneNode(true);
+            const st = statusBadge(f.status);
+            row.querySelector('.statusBadge').textContent = st.text;
+            row.querySelector('.statusBadge').className = `statusBadge ${st.class}`;
+            row.querySelector('time').textContent = fmtTime(f.datetime_utc);
+            row.querySelector('.home').textContent = f.home.name;
+            row.querySelector('.away').textContent = f.away.name;
+            const hs = (f.home.goals ?? 0);
+            const as = (f.away.goals ?? 0);
+            row.querySelector('.score').textContent = `${hs} : ${as}`;
+            row.querySelector('.round').textContent = f.league.round || '';
+            holder.appendChild(row);
+          }
+          listEl.appendChild(root);
+        }
+      }
+
+      metaEl.textContent = `Son güncelleme: ${DATA.updated_at ? fmtTime(DATA.updated_at) : '—'}`;
+    }
+
+    async function loadAndRender() {
+      DATA = await fetchScores();
+      render();
+    }
+
+    function startAutoRefresh() {
+      stopAutoRefresh();
+      refreshTimer = setInterval(loadAndRender, 60_000);
+    }
+    function stopAutoRefresh() { if (refreshTimer) clearInterval(refreshTimer); }
+
+    // Events
+    searchInput.addEventListener('input', render);
+    leagueSelect.addEventListener('change', render);
+    liveOnly.addEventListener('change', render);
+    autoRefresh.addEventListener('change', (e)=> e.target.checked ? startAutoRefresh() : stopAutoRefresh());
+    refreshBtn.addEventListener('click', loadAndRender);
+
+    // İlk yükleme
+    loadAndRender();
+    startAutoRefresh();
+
+    // Örnek veri (Action çalışana kadar)
+    const SAMPLE = {
+      updated_at: new Date().toISOString(),
+      fixtures: [
+        {
+          id: 1,
+          league: { id: 100, name: "Süper Lig", country: "Türkiye", season: 2025, round: "Hafta 3" },
+          status: { short: "NS", long: "Not Started", elapsed: 0 },
+          datetime_utc: new Date(Date.now() + 3600_000).toISOString(),
+          home: { id: 1907, name: "Fenerbahçe", goals: 0 },
+          away: { id: 1903, name: "Beşiktaş", goals: 0 }
+        },
+        {
+          id: 2,
+          league: { id: 200, name: "Premier League", country: "İngiltere", season: 2025, round: "Matchday 3" },
+          status: { short: "1H", long: "First Half", elapsed: 28 },
+          datetime_utc: new Date(Date.now() - 1800_000).toISOString(),
+          home: { id: 50, name: "Arsenal", goals: 1 },
+          away: { id: 66, name: "Manchester United", goals: 0 }
+        }
+      ]
+    };
+  </script>
+</body>
+</html>
