@@ -1,0 +1,58 @@
+name: Update scores.json
+
+on:
+  schedule:
+    - cron: '*/2 * * * *'  # her 2 dakikada bir
+  workflow_dispatch: {}
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install jq
+      # jq genelde yüklü gelir ama garanti olsun
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Fetch live & today fixtures
+        env:
+          API_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+        run: |
+          set -e
+          BASE="https://v3.football.api-sports.io/fixtures"
+          HDR="x-apisports-key: ${API_KEY}"
+
+          LIVE=$(curl -s -H "$HDR" "$BASE?live=all&timezone=Europe/Istanbul")
+          TODAY=$(curl -s -H "$HDR" "$BASE?date=$(date +%F)&timezone=Europe/Istanbul")
+
+          echo "$LIVE" > live.json
+          echo "$TODAY" > today.json
+
+          jq -s '{
+            updated_at: (now | todateiso8601),
+            fixtures: (
+              (.[0].response + .[1].response)
+              | unique_by(.fixture.id)
+              | map({
+                  id: .fixture.id,
+                  league: {id: .league.id, name: .league.name, country: .league.country, season: .league.season, round: .league.round},
+                  status: {short: .fixture.status.short, long: .fixture.status.long, elapsed: (.fixture.status.elapsed // 0)},
+                  datetime_utc: .fixture.date,
+                  home: {id: .teams.home.id, name: .teams.home.name, goals: (.goals.home // 0)},
+                  away: {id: .teams.away.id, name: .teams.away.name, goals: (.goals.away // 0)}
+                })
+            )
+          }' live.json today.json > scores.json
+
+      - name: Commit & push if changed
+        run: |
+          if ! git diff --quiet -- scores.json; then
+            git config user.name "score-bot"
+            git config user.email "actions@users.noreply.github.com"
+            git add scores.json
+            git commit -m "Update scores.json $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            git push
+          else
+            echo "No changes"
+          fi
