@@ -2,8 +2,8 @@ name: Update scores.json
 
 on:
   schedule:
-    - cron: '*/30 * * * *'  # her 30 dakikada bir çalışır (Free plan için güvenli)
-  workflow_dispatch: {}      # elle başlatabilmek için
+    - cron: '*/2 * * * *'  # her 2 dakikada bir
+  workflow_dispatch: {}
 
 jobs:
   update:
@@ -12,6 +12,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install jq
+      # jq genelde yüklü gelir ama garanti olsun
         run: sudo apt-get update && sudo apt-get install -y jq
 
       - name: Fetch live & today fixtures
@@ -22,13 +23,11 @@ jobs:
           BASE="https://v3.football.api-sports.io/fixtures"
           HDR="x-apisports-key: ${API_KEY}"
 
-          # Bugünkü maçlar (İstanbul saatine göre)
-          TODAY=$(curl -s -H "$HDR" "$BASE?date=$(date +%F)&timezone=Europe/Istanbul")
-          # Canlı maçlar
           LIVE=$(curl -s -H "$HDR" "$BASE?live=all&timezone=Europe/Istanbul")
+          TODAY=$(curl -s -H "$HDR" "$BASE?date=$(date +%F)&timezone=Europe/Istanbul")
 
-          echo "$TODAY" > today.json
           echo "$LIVE" > live.json
+          echo "$TODAY" > today.json
 
           jq -s '{
             updated_at: (now | todateiso8601),
@@ -37,32 +36,14 @@ jobs:
               | unique_by(.fixture.id)
               | map({
                   id: .fixture.id,
-                  league: {
-                    id: .league.id,
-                    name: .league.name,
-                    country: .league.country,
-                    season: .league.season,
-                    round: .league.round
-                  },
-                  status: {
-                    short: .fixture.status.short,
-                    long: .fixture.status.long,
-                    elapsed: (.fixture.status.elapsed // 0)
-                  },
+                  league: {id: .league.id, name: .league.name, country: .league.country, season: .league.season, round: .league.round},
+                  status: {short: .fixture.status.short, long: .fixture.status.long, elapsed: (.fixture.status.elapsed // 0)},
                   datetime_utc: .fixture.date,
-                  home: {
-                    id: .teams.home.id,
-                    name: .teams.home.name,
-                    goals: (.goals.home // 0)
-                  },
-                  away: {
-                    id: .teams.away.id,
-                    name: .teams.away.name,
-                    goals: (.goals.away // 0)
-                  }
+                  home: {id: .teams.home.id, name: .teams.home.name, goals: (.goals.home // 0)},
+                  away: {id: .teams.away.id, name: .teams.away.name, goals: (.goals.away // 0)}
                 })
             )
-          }' today.json live.json > scores.json
+          }' live.json today.json > scores.json
 
       - name: Commit & push if changed
         run: |
